@@ -93,13 +93,18 @@ const actions = {
   },
 
   async GET_RECORDING({ commit }, recordingId) {
-    const recording = getRecording(commit, recordingId);
-    const tracks = getTracks(commit, recordingId);
-
-    await recording;
-    await tracks;
-
-    return recording && tracks;
+    const tracksPromise = api.recording.tracks(recordingId);
+    const recordingPromise = api.recording.id(recordingId);
+    const { result: recording } = await recordingPromise;
+    const {
+      result: { tracks }
+    } = await tracksPromise;
+    commit("receiveRecording", recording);
+    commit("receiveTracks", tracks);
+    return {
+      recording,
+      tracks
+    };
   },
 
   async DELETE_TAG({ commit }, tag) {
@@ -148,25 +153,27 @@ const actions = {
     }
 
     // Add an initial tag to update the UI more quickly.
-    const newTag = Object.assign({}, tag);
-    newTag.id = result.trackTagId;
-    newTag.TrackId = trackId;
-    newTag.createdAt = new Date();
+    const newTag = {
+      ...tag,
+      id: result.trackingId,
+      TrackId: trackId,
+      createdAt: new Date()
+    };
     commit("addTrackTag", newTag);
 
     // Resync all tags for the track from the API.
-    const {
-      success: syncSuccess,
-      result: syncResult
-    } = await api.recording.tracks(recordingId);
-    if (!syncSuccess) {
-      return;
-    }
-    for (const track of syncResult.tracks) {
-      if (track.id == trackId) {
-        commit("setTrackTags", track);
-      }
-    }
+    api.recording
+      .tracks(recordingId)
+      .then(({ success: syncSuccess, result: syncResult }) => {
+        if (syncSuccess) {
+          for (const track of syncResult.tracks) {
+            if (track.id == trackId) {
+              commit("setTrackTags", track);
+            }
+          }
+        }
+      });
+    return result;
   },
 
   async DELETE_TRACK_TAG({ commit }, { tag, recordingId }) {
@@ -222,18 +229,6 @@ const mutations = {
     const track = state.findTrack(deletedTag.TrackId);
     track.TrackTags = track.TrackTags.filter(tag => tag.id != deletedTag.id);
   }
-};
-
-const getRecording = async function(commit, recordingId) {
-  const { result: recording } = await api.recording.id(recordingId);
-  commit("receiveRecording", recording);
-  return recording.success;
-};
-
-const getTracks = async function(commit, recordingId) {
-  const { result: tracks } = await api.recording.tracks(recordingId);
-  commit("receiveTracks", tracks);
-  return tracks.success;
 };
 
 export default {
