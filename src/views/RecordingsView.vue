@@ -130,7 +130,7 @@
 import QueryRecordings from "../components/QueryRecordings/QueryRecordings.vue";
 import CsvDownload from "../components/QueryRecordings/CsvDownload.vue";
 import RecordingSummary from "../components/RecordingSummary.vue";
-import api from "../api/index";
+import api from "../api";
 
 const roundDate = (date, toHour = false) => {
   const d = new Date(date.getTime());
@@ -584,6 +584,7 @@ export default {
       this.tableItems = [];
       // Call API and process results
       this.queryPending = true;
+      console.log(this.query, this.serialiseQuery(this.query, true));
       const { result, success } = await api.recording.query(
         this.serialiseQuery(this.query, true)
       );

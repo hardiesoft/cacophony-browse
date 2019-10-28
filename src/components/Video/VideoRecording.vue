@@ -8,6 +8,7 @@
           :tracks="orderedTracks()"
           :current-track="selectedTrack"
           :colours="colours"
+          @request-next-recording="nextRecording"
         />
       </b-col>
 
@@ -184,6 +185,9 @@ export default {
     prevNext(event) {
       this.gotoNextRecording(event[0], event[1], event[2]);
     },
+    nextRecording() {
+      this.gotoNextRecording("next", false, false, true);
+    },
     getRecordingId() {
       return Number(this.$route.params.id);
     },
@@ -207,7 +211,7 @@ export default {
       });
     },
     orderedTracks: function() {
-      return this.tracks
+      return (this.tracks || [])
         .slice()
         .sort((a, b) => a.data.start_s - b.data.start_s);
     }

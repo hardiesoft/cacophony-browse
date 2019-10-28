@@ -1,22 +1,46 @@
 <template>
   <div ref="container" class="video-container">
     <canvas
+      ref="canvas_2"
+      :width="canvasWidth"
+      :height="canvasHeight"
+      class="canvas_2"
+      :class="{ 'ended-playback': ended }"
+    />
+    <canvas
       ref="canvas"
       :width="canvasWidth"
       :height="canvasHeight"
       class="canvas"
+      :class="{ 'ended-playback': ended }"
     />
     <video-player
       ref="player"
       :key="videoUrl"
       :options="playerOptions"
       class="video vjs-custom-skin"
+      :class="{ 'ended-playback': ended }"
       @seeking="seeking"
       @play="draw"
       @statechanged="stateChange"
+      @ended="showEndedOverlay"
+      @canplay="canPlay"
+      @canplaythrough="canPlayThrough"
       @ready="playerReady"
     />
+    <transition name="fade">
+      <div class="load-overlay" v-if="loading">
+        <Spinner />
+      </div>
+    </transition>
+    <transition name="fade">
+      <div class="end-overlay" v-if="ended">
+        <b-button @click="replay">Play again?</b-button>
+        <b-button @click="requestNextVideo">Next video?</b-button>
+      </div>
+    </transition>
     <VideoTracksScrubber
+      :class="{ 'ended-playback': ended }"
       ref="scrubber"
       :duration="duration"
       :tracks="tracks"
@@ -33,10 +57,12 @@
 <script>
 import { videoPlayer } from "vue-video-player";
 import VideoTracksScrubber from "./VideoTracksScrubber.vue";
+import Spinner from "../Spinner";
 
 export default {
   name: "ThermalVideoPlayer",
   components: {
+    Spinner,
     videoPlayer,
     VideoTracksScrubber
   },
@@ -56,6 +82,18 @@ export default {
     colours: {
       type: Array,
       required: true
+    },
+    canSelectTracks: {
+      type: Boolean,
+      default: true
+    },
+    loopSelectedTrack: {
+      type: Boolean,
+      default: false
+    },
+    showMotionPaths: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -65,9 +103,10 @@ export default {
       currentVideoTime: 0,
       duration: 0,
       playerOptions: {
+        bigPlayButton: false,
         autoplay: true,
         muted: true,
-        width: "720px",
+        width: "800px",
         playbackRates: [0.5, 1, 2, 4, 8],
         inactivityTimeout: 0,
         sources: [
@@ -82,7 +121,9 @@ export default {
       scale: 5,
       wasPaused: false,
       isScrubbing: false,
-      initedTrackHitRegions: false
+      initedTrackHitRegions: false,
+      ended: false,
+      loading: true
     };
   },
   watch: {
@@ -109,6 +150,17 @@ export default {
     window.removeEventListener("resize", this.onResize);
   },
   methods: {
+    canPlay() {
+      this.loading = false;
+      this.duration = document.getElementsByTagName("video")[0].duration;
+      this.$emit("ready-to-play");
+    },
+    canPlayThrough() {},
+    showEndedOverlay() {
+      setTimeout(() => {
+        this.ended = true;
+      });
+    },
     bindRateChange() {
       const htmlPlayer = this.$refs.player.$refs.video;
       const rate = localStorage.getItem("playbackrate");
@@ -132,13 +184,9 @@ export default {
       }
       this.isScrubbing = false;
     },
-    stateChange(event) {
-      if (event.hasOwnProperty("canplay") && event.canplay) {
-        // Try to get the video length:
-        this.duration = document.getElementsByTagName("video")[0].duration;
-      }
-    },
+    stateChange(event) {},
     setVideoUrl() {
+      this.loading = true;
       const htmlPlayer = this.$refs.player.$refs.video;
       if (htmlPlayer) {
         const rate = localStorage.getItem("playbackrate");
@@ -152,7 +200,24 @@ export default {
       this.playerOptions.height = this.canvasHeight + "px";
       this.$data.playerOptions.sources[0].src = this.videoUrl;
       // if tracks is loaded then select the first track
-      this.currentTrack = 0;
+      if (this.currentTrack !== 0) {
+        this.$emit("trackSelected", 0);
+      }
+    },
+    replay() {
+      const player = this.$refs.player.player;
+      player.pause();
+      player.currentTime(0);
+      player.trigger("loadstart");
+      player.play();
+      if (this.currentTrack !== 0) {
+        this.$emit("trackSelected", 0);
+      }
+      this.ended = false;
+    },
+    requestNextVideo() {
+      this.ended = false;
+      this.$emit("request-next-recording");
     },
     playerReady() {
       this.bindRateChange();
@@ -174,6 +239,40 @@ export default {
         this.draw();
       }
     },
+    drawTrackPaths() {
+      const canvas2 = this.$refs.canvas_2;
+      const context = canvas2.getContext("2d");
+      const devicePixelRatio = window.devicePixelRatio;
+      canvas2.width = this.canvasWidth * devicePixelRatio;
+      canvas2.height = this.canvasHeight * devicePixelRatio;
+      canvas2.style.width = `${this.canvasWidth}px`;
+      canvas2.style.height = `${this.canvasHeight}px`;
+      context.scale(devicePixelRatio, devicePixelRatio);
+
+      // Draw track trails:
+      let num = 0;
+      for (const { data } of this.tracks) {
+        context.strokeStyle = this.colours[num % this.colours.length];
+        context.lineWidth = 3;
+        context.lineJoin = "round";
+        context.lineCap = "round";
+        context.beginPath();
+        let l = 0;
+        for (const position of data.positions) {
+          const p = position[1];
+          const x = (p[0] + (p[2] - p[0]) * 0.5) * this.scale;
+          const y = (p[1] + (p[3] - p[1]) * 0.5) * this.scale;
+          if (l === 0) {
+            context.moveTo(x, y);
+          } else {
+            context.lineTo(x, y);
+          }
+          l++;
+        }
+        context.stroke();
+        num++;
+      }
+    },
     initOverlayCanvas() {
       this.canvasWidth = this.$refs.container.clientWidth;
       this.scale = this.canvasWidth / 160;
@@ -191,11 +290,15 @@ export default {
       canvas.style.height = `${this.canvasHeight}px`;
       context.scale(devicePixelRatio, devicePixelRatio);
 
-      if (this.$refs.scrubber) {
+      if (this.showMotionPaths) {
+        this.drawTrackPaths();
+      }
+
+      if (this.$refs.scrubber && this.$refs.scrubber.$el) {
         this.$refs.scrubber.$el.style.width = canvas.style.width;
       }
 
-      if (!this.initedTrackHitRegions) {
+      if (this.canSelectTracks && !this.initedTrackHitRegions) {
         this.initedTrackHitRegions = true;
         // Hit-testing of track rects, so they are clickable.
         const hitTestPos = (x, y) => {
@@ -221,7 +324,7 @@ export default {
             const x = event.x - canvasOffset.x;
             const y = event.y - canvasOffset.y;
             const hitRect = hitTestPos(x, y);
-            if (hitRect) {
+            if (hitRect && this.currentTrack !== hitRect.trackIndex) {
               this.$emit("trackSelected", hitRect.trackIndex);
             }
           }.bind(this)
@@ -241,7 +344,7 @@ export default {
       this.$refs.player.player.currentTime(time);
     },
     ratechange() {
-      if (this.$refs.player != undefined) {
+      if (this.$refs.player !== undefined) {
         const htmlPlayer = this.$refs.player.$refs.video;
         localStorage.setItem("playbackrate", htmlPlayer.playbackRate);
       }
@@ -311,7 +414,21 @@ export default {
         const v = this.$refs.player;
         // NOTE: Since our video is 9fps, we're don't need to update this at 60fps.
         const frameTime = 1 / 9;
+
+        if (this.loopSelectedTrack) {
+          // If we want to loop the current track, check to see if we've gone past the end of it here.
+          const trackEndTime =
+            (this.tracks &&
+              this.tracks[this.currentTrack] &&
+              this.tracks[this.currentTrack].data.end_s) ||
+            Number.POSITIVE_INFINITY;
+          if (v.player.currentTime() > trackEndTime) {
+            this.selectTrack();
+          }
+        }
+
         this.currentVideoTime = v.player.currentTime();
+
         const currentFrame = Math.floor(this.currentVideoTime / frameTime);
         if (currentFrame !== this.lastDisplayedVideoTime || this.isScrubbing) {
           // Only update the canvas if the video time has changed as this means a new
@@ -327,7 +444,11 @@ export default {
 
           canvas.style.width = `${this.canvasWidth}px`;
           canvas.style.height = `${this.canvasHeight}px`;
-          if (this.$refs.scrubber) {
+          if (
+            this.$refs.scrubber &&
+            this.$refs.scrubber.$el &&
+            this.$refs.scrubber.$el.style
+          ) {
             this.$refs.scrubber.$el.style.width = canvas.style.width;
           }
           context.scale(devicePixelRatio, devicePixelRatio);
@@ -337,6 +458,9 @@ export default {
           if (allFrameData.length) {
             for (const rect of allFrameData) {
               this.drawRectWithText(context, rect);
+            }
+            if (this.showMotionPaths) {
+              this.drawTrackPaths();
             }
           }
           this.lastDisplayedVideoTime = currentFrame;
@@ -348,7 +472,7 @@ export default {
 };
 </script>
 
-<style>
+<style lang="scss">
 .video {
   min-width: 100%;
   max-width: 100%;
@@ -377,11 +501,51 @@ export default {
 
 .canvas {
   position: absolute;
-  left: 0px;
-  top: 0px;
+  left: 0;
+  top: 0;
   width: 100%;
   height: 100%;
   z-index: 900;
+}
+.canvas_2 {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 800;
+}
+
+.load-overlay {
+  background-color: black;
+  > * {
+    position: relative;
+    top: calc(50% - 1em);
+  }
+}
+
+.end-overlay,
+.load-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+}
+
+.end-overlay {
+  background-color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: center;
+  > button {
+    max-height: 60px;
+  }
+}
+.ended-playback {
+  //opacity: 0.5;
 }
 
 .video-container {
@@ -389,6 +553,14 @@ export default {
   position: relative;
   width: 100%;
   padding: 0;
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s;
+}
+.fade-enter,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
 <style src="video.js/dist/video-js.css"></style>
