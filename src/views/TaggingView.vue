@@ -33,6 +33,7 @@
       <b-button :disabled="!readyToTag" @click="markTrackAsSkipped"
         >Skip</b-button
       >
+      <b-button :disabled="history.length === 0" @click="undo">Undo</b-button>
       <div v-if="currentRecording">
         <div class="tag-buttons">
           <b-button
@@ -47,35 +48,37 @@
           >
         </div>
 
-        <h4 v-if="taggedRecordings.length !== 0">
-          Tagging history
-        </h4>
-        <div
-          v-for="{ recording, tracks: prevTracks } in taggedRecordings"
-          :key="`recording_${recording.id}`"
-          class="recording-history"
-        >
-          <p>Recording #{{ recording.id }}</p>
-          <div v-for="track in prevTracks" :key="`track_${track.id}`">
-            <span
-              v-if="trackIsAlreadyTaggedByCurrentUser(track)"
-              class="track-history"
-            >
-              Track {{ track.trackIndex + 1 }}:
-            </span>
-            <span
-              v-for="tag in tagsByThisUser(track.TrackTags)"
-              :key="`tag_${tag.what}`"
-            >
-              <b-button
-                @click="() => deleteTag(tag, recording, track)"
-                v-if="tag.what !== 'skipped'"
+        <div v-if="false">
+          <h4 v-if="taggedRecordings.length !== 0">
+            Tagging history
+          </h4>
+          <div
+            v-for="{ recording, tracks: prevTracks } in taggedRecordings"
+            :key="`recording_${recording.id}`"
+            class="recording-history"
+          >
+            <p>Recording #{{ recording.id }}</p>
+            <div v-for="track in prevTracks" :key="`track_${track.id}`">
+              <span
+                v-if="trackIsAlreadyTaggedByCurrentUser(track)"
+                class="track-history"
               >
-                <span>{{ tag.what }}</span>
-                <font-awesome-icon icon="trash" />
-              </b-button>
-              <span v-else>Skipped</span>
-            </span>
+                Track {{ track.trackIndex + 1 }}:
+              </span>
+              <span
+                v-for="tag in tagsByThisUser(track.TrackTags)"
+                :key="`tag_${tag.what}`"
+              >
+                <b-button
+                  @click="() => deleteTag(tag, recording, track)"
+                  v-if="tag.what !== 'skipped'"
+                >
+                  <span>{{ tag.what }}</span>
+                  <font-awesome-icon icon="trash" />
+                </b-button>
+                <span v-else>Skipped</span>
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -119,6 +122,13 @@ interface TaggingViewData {
   taggingPending: boolean;
   readyToPlay: boolean;
   tracks: Track[];
+  history: {
+    tracks: Track[];
+    trackIndex: number;
+    recording: RecordingInfo;
+    recordingData: Recording;
+    tag: TrackTag;
+  }[];
   nextTrackOrRecordingTimeout: number;
 }
 
@@ -151,13 +161,14 @@ export default Vue.extend({
       taggingPending: false,
       readyToPlay: false,
       tracks: [],
+      history: [],
       nextTrackOrRecordingTimeout: 0
     };
   },
   async created() {
     const gotRecordings = await this.getRecordings();
     if (gotRecordings) {
-      //this.removeAllMyTags();
+      this.removeAllMyTags();
       // Pick a random device to begin with:
       this.pickDevice();
       this.loading = true;
@@ -176,6 +187,22 @@ export default Vue.extend({
           tag.UserId === thisUserId
       );
     },
+    async undo() {
+      const {
+        recording,
+        recordingData,
+        tracks,
+        trackIndex,
+        tag
+      } = this.history.pop();
+
+      await this.deleteTag(tag, recordingData.recording, tracks[trackIndex]);
+
+      this.currentRecording = recording;
+      this.currentRecordingData = recordingData;
+      this.tracks = tracks;
+      this.currentTrackIndex = trackIndex;
+    },
     isTagged(tagValue: string): boolean {
       if (this.currentRecording && this.tracks && this.currentTrack) {
         for (const tag of this.currentTrack.TrackTags) {
@@ -187,13 +214,23 @@ export default Vue.extend({
       return false;
     },
     markTrackAsSkipped() {
-      this.currentTrack.TrackTags.push({
+      const synthesisedTag = {
         id: -1,
         TrackId: this.currentTrack.id,
         what: "skipped",
         createdAt: new Date().toUTCString(),
         User: { username: this.currentUser.username, id: this.currentUser.id }
+      };
+      this.currentTrack.TrackTags.push(synthesisedTag);
+
+      this.history.push({
+        trackIndex: this.currentTrackIndex,
+        tracks: this.orderedTracks,
+        recording: this.currentRecording,
+        recordingData: this.currentRecordingData,
+        tag: synthesisedTag
       });
+
       this.nextTrackOrRecording();
     },
     nextTrackOrRecording() {
@@ -258,7 +295,7 @@ export default Vue.extend({
           track => track.id === trackId
         );
         if (targetTrack) {
-          targetTrack.TrackTags.push({
+          const synthesisedTag = {
             ...tag,
             User: {
               username: this.currentUser.username,
@@ -267,8 +304,18 @@ export default Vue.extend({
             id: result.trackTagId,
             TrackId: trackId,
             createdAt: new Date().toUTCString()
+          };
+          targetTrack.TrackTags.push(synthesisedTag);
+
+          this.history.push({
+            trackIndex: this.currentTrackIndex,
+            tracks: this.orderedTracks,
+            recording: this.currentRecording,
+            recordingData: this.currentRecordingData,
+            tag: synthesisedTag
           });
         }
+
         console.log(this.nextTrackOrRecordingTimeout);
         this.primeNextTrack(3);
       }
@@ -318,6 +365,7 @@ export default Vue.extend({
         this.taggingPending = false;
 
         if (success) {
+          console.log("deleted tag", tagClone);
           // eslint-disable-next-line require-atomic-updates
           track.TrackTags = track.TrackTags.filter(item => item !== tag);
         }

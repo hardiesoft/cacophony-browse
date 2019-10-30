@@ -44,6 +44,7 @@
       ref="scrubber"
       :duration="duration"
       :tracks="tracks"
+      :current-track="this.currentTrack"
       :current-video-time="currentVideoTime"
       :colours="colours"
       :canvas-width="canvasWidth"
@@ -133,10 +134,7 @@ export default {
     currentTrack: function() {
       this.selectTrack();
     },
-    tracks: function(tracks) {
-      for (let i = 0; i < tracks.length; i++) {
-        tracks[i].trackIndex = i;
-      }
+    tracks: function() {
       this.selectTrack();
     }
   },
@@ -317,18 +315,15 @@ export default {
           return null;
         };
 
-        canvas.addEventListener(
-          "click",
-          function(event) {
-            const canvasOffset = canvas.getBoundingClientRect();
-            const x = event.x - canvasOffset.x;
-            const y = event.y - canvasOffset.y;
-            const hitRect = hitTestPos(x, y);
-            if (hitRect && this.currentTrack !== hitRect.trackIndex) {
-              this.$emit("trackSelected", hitRect.trackIndex);
-            }
-          }.bind(this)
-        );
+        canvas.addEventListener("click", event => {
+          const canvasOffset = canvas.getBoundingClientRect();
+          const x = event.x - canvasOffset.x;
+          const y = event.y - canvasOffset.y;
+          const hitRect = hitTestPos(x, y);
+          if (hitRect && this.currentTrack !== hitRect.trackIndex) {
+            this.$emit("trackSelected", hitRect.trackIndex);
+          }
+        });
 
         canvas.addEventListener("mousemove", event => {
           const canvasOffset = canvas.getBoundingClientRect();

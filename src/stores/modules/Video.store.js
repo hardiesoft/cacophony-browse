@@ -96,14 +96,12 @@ const actions = {
     const tracksPromise = api.recording.tracks(recordingId);
     const recordingPromise = api.recording.id(recordingId);
     const { result: recording } = await recordingPromise;
-    const {
-      result: { tracks }
-    } = await tracksPromise;
+    const { result: tracks } = await tracksPromise;
     commit("receiveRecording", recording);
     commit("receiveTracks", tracks);
     return {
       recording,
-      tracks
+      tracks: tracks.tracks
     };
   },
 
@@ -195,6 +193,9 @@ const mutations = {
   },
 
   receiveTracks(state, { tracks }) {
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].trackIndex = i;
+    }
     state.tracks = tracks;
   },
 

@@ -19,7 +19,8 @@
           background: colours[index % colours.length],
           top: `${index * 13}px`,
           width: getWidthForTrack(track),
-          left: getOffsetForTrack(track)
+          left: getOffsetForTrack(track),
+          opacity: index === currentTrack ? 1.0 : 0.5
         }"
         class="scrub-track"
       />
@@ -56,6 +57,11 @@ export default {
       default: 0,
       required: true
     },
+    currentTrack: {
+      type: Number,
+      default: 0,
+      required: true
+    },
     canvasWidth: {
       type: Number,
       required: true
@@ -67,6 +73,8 @@ export default {
     };
   },
   computed: {
+    // TODO(jon): FIX SCRUBBING.
+
     isLoaded() {
       const loaded = this.tracks && this.duration;
       if (loaded && this.tracks.length !== 0 && !this.inited) {
@@ -172,6 +180,7 @@ export default {
   text-align: center;
 }
 .scrub-track {
+  transition: opacity 0.3s linear;
   position: absolute;
   height: 12px;
   border-radius: 5px;

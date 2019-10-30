@@ -5,7 +5,8 @@
         <ThermalVideoPlayer
           ref="thermalPlayer"
           :video-url="videoUrl"
-          :tracks="orderedTracks()"
+          :tracks="orderedTracks"
+          @trackSelected="trackSelected"
           :current-track="selectedTrack"
           :colours="colours"
           @request-next-recording="nextRecording"
@@ -15,7 +16,7 @@
       <b-col cols="12" lg="4">
         <div v-if="tracks && tracks.length > 0" class="accordion">
           <TrackInfo
-            v-for="(track, index) in orderedTracks()"
+            v-for="(track, index) in orderedTracks"
             :key="index"
             :track="track"
             :index="index"
@@ -23,7 +24,7 @@
             :recording-id="getRecordingId()"
             :show="index == selectedTrack"
             :colour="colours[index % colours.length]"
-            @trackSelected="trackSelected($event)"
+            @trackSelected="trackSelected"
           />
         </div>
         <div
@@ -113,7 +114,12 @@ export default {
       tagItems() {
         return this.$store.getters["Video/getTagItems"];
       }
-    })
+    }),
+    orderedTracks() {
+      return ([...this.tracks] || []).sort(
+        (a, b) => a.data.start_s - b.data.start_s
+      );
+    }
   },
   watch: {
     recording: function() {
@@ -199,9 +205,7 @@ export default {
       this.$store.dispatch("Video/DELETE_TAG", tagId);
     },
     trackSelected(track) {
-      if (track != this.selectedTrack) {
-        this.selectedTrack = track;
-      }
+      this.selectedTrack = track;
     },
     updateComment(comment) {
       const recordingId = Number(this.$route.params.id);
@@ -209,11 +213,6 @@ export default {
         comment,
         recordingId
       });
-    },
-    orderedTracks: function() {
-      return (this.tracks || [])
-        .slice()
-        .sort((a, b) => a.data.start_s - b.data.start_s);
     }
   }
 };
